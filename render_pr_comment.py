@@ -22,6 +22,12 @@ def _guess_lang(file_path: str) -> str:
     return ext if ext else ""
 
 
+def _append_section(details: list, title: str, content: str):
+    """Append a markdown section if content is non-empty."""
+    if content:
+        details.append(f"### {title}\n\n{content}")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Render PR comment markdown from result.json")
     ap.add_argument("json_path", help="Path to result.json")
@@ -29,6 +35,11 @@ def main():
     ap.add_argument("--max-blocks", type=int, default=12, help="Max blocks to render in comment")
     ap.add_argument("--max-text", type=int, default=1800, help="Max chars for long text fields inside comment")
     ap.add_argument("--max-code", type=int, default=8000, help="Max chars for mixed_code snippet inside comment")
+    ap.add_argument(
+        "--show-empty",
+        action="store_true",
+        help="If set, show placeholders when some analysis fields are empty",
+    )
     args = ap.parse_args()
 
     data = json.loads(Path(args.json_path).read_text(encoding="utf-8"))
@@ -85,8 +96,14 @@ def main():
         suggestion = _truncate(b.get("resolution_suggestion") or "", 240)
         reason = _truncate(b.get("resolution_suggestion_reason") or "", max_text)
 
+        # 新增：把 content / influence 也拿出来渲染
+        branchA_content = _truncate(b.get("branchA_content") or "", max_text)
         branchA_reason = _truncate(b.get("branchA_reason") or "", max_text)
+        branchA_influence = _truncate(b.get("branchA_influence") or "", max_text)
+
+        branchB_content = _truncate(b.get("branchB_content") or "", max_text)
         branchB_reason = _truncate(b.get("branchB_reason") or "", max_text)
+        branchB_influence = _truncate(b.get("branchB_influence") or "", max_text)
 
         mixed = (b.get("mixed_code") or "").strip()
         if len(mixed) > max_code:
@@ -108,15 +125,36 @@ def main():
             lines.append("")
             lines.append(reason)
 
+        # 统一放进“分析要点”折叠区：内容 / 原因 / 影响
         details = []
-        if branchA_reason:
-            details.append("### BranchA 修改原因（摘要）\n\n" + branchA_reason)
-        if branchB_reason:
-            details.append("### BranchB 修改原因（摘要）\n\n" + branchB_reason)
+
+        _append_section(details, "BranchA 修改内容（摘要）", branchA_content)
+        _append_section(details, "BranchA 修改原因（摘要）", branchA_reason)
+        _append_section(details, "BranchA 修改影响（摘要）", branchA_influence)
+
+        _append_section(details, "BranchB 修改内容（摘要）", branchB_content)
+        _append_section(details, "BranchB 修改原因（摘要）", branchB_reason)
+        _append_section(details, "BranchB 修改影响（摘要）", branchB_influence)
+
+        if args.show_empty:
+            # 当你想明确区分“未生成” vs “未展示”时用这个开关
+            if not branchA_content:
+                _append_section(details, "BranchA 修改内容（摘要）", "_（为空/未生成）_")
+            if not branchA_reason:
+                _append_section(details, "BranchA 修改原因（摘要）", "_（为空/未生成）_")
+            if not branchA_influence:
+                _append_section(details, "BranchA 修改影响（摘要）", "_（为空/未生成）_")
+
+            if not branchB_content:
+                _append_section(details, "BranchB 修改内容（摘要）", "_（为空/未生成）_")
+            if not branchB_reason:
+                _append_section(details, "BranchB 修改原因（摘要）", "_（为空/未生成）_")
+            if not branchB_influence:
+                _append_section(details, "BranchB 修改影响（摘要）", "_（为空/未生成）_")
 
         if details:
             lines.append("")
-            lines.append("<details><summary>分析要点</summary>")
+            lines.append("<details><summary>分析要点（内容 / 原因 / 影响）</summary>")
             lines.append("")
             lines.extend(details)
             lines.append("")
